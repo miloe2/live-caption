@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option D - Compact</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      :root {
+        --bg: #f4f6f3;
+        --surface: #ffffff;
+        --surface-soft: #edf3ee;
+        --ink: #17201b;
+        --muted: #66706a;
+        --line: #d4ddd5;
+        --accent: #1d6f5f;
+      }
+
+      .mobile-topbar {
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface) 96%, transparent);
+      }
+
+      .live-pill {
+        display: inline-flex;
+        min-height: 32px;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border-radius: 999px;
+        background: #e3f4ed;
+        padding: 0 10px;
+        color: #0e5c4a;
+        font-size: 12px;
+        font-weight: 950;
+      }
+
+      .live-pill::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #19a873;
+      }
+
+      .mobile-control-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .control-chip,
+      .clear-button,
+      .session-button {
+        min-height: 40px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .control-chip {
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--ink);
+      }
+
+      .clear-button {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        padding: 0 13px;
+      }
+
+      .session-button {
+        border: 0;
+        background: var(--ink);
+        color: #ffffff;
+        padding: 0 18px;
+      }
+
+      .compact-content {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 10px;
+        padding: 10px;
+      }
+
+      .compact-caption {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 14px;
+      }
+
+      .compact-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .compact-item {
+        display: grid;
+        grid-template-columns: 5px minmax(0, 1fr);
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .compact-bar {
+        border-radius: 999px;
+        background: #d7dde7;
+      }
+
+      .compact-item.live .compact-bar {
+        background: var(--accent);
+      }
+
+      .compact-item .translation-line {
+        font-size: clamp(24px, 7.3vw, 48px);
+        line-height: 1.24;
+      }
+
+      .compact-item.old .translation-line {
+        color: #6e7682;
+      }
+
+      .compact-source {
+        padding: 12px;
+        max-height: 112px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="mock-shell">
+      <header class="mobile-topbar">
+        <div class="mobile-control-row">
+          <span class="live-pill">Live</span>
+          <button class="control-chip">Eng / 한</button>
+          <button class="clear-button">Clear</button>
+          <button class="session-button">Stop</button>
+        </div>
+      </header>
+
+      <section class="content compact-content">
+        <article class="panel compact-caption">
+          <h2 class="panel-title">한국어 번역</h2>
+          <div class="compact-list">
+            <div class="compact-item old">
+              <span class="compact-bar"></span>
+              <p class="translation-line">
+                최신 발전을 연구자들에게 전달하는 데 중요한 역할을 해왔습니다.
+              </p>
+            </div>
+            <div class="compact-item old">
+              <span class="compact-bar"></span>
+              <p class="translation-line">
+                라이브 스트리밍으로 더 넓은 청중에게 도달할 수 있습니다.
+              </p>
+            </div>
+            <div class="compact-item">
+              <span class="compact-bar"></span>
+              <p class="translation-line">
+                비전공자와 학생들에게 무엇을 전달할지 고민했습니다.
+              </p>
+            </div>
+            <div class="compact-item live">
+              <span class="compact-bar"></span>
+              <p class="translation-line">
+                AI가 소재 연구와 제조 현장을 어떻게 바꾸는지 보여주겠습니다.
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel compact-source">
+          <p class="original-line">
+            So I asked myself, what would I want to convey to non-scientists and
+            students about artificial intelligence in materials and manufacturing?
+          </p>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

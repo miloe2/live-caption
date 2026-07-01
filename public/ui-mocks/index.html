@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Caption UI Mocks</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      body {
+        background: #f4f1eb;
+      }
+
+      .index-wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 28px 18px 48px;
+      }
+
+      .index-title {
+        margin: 0;
+        font-size: clamp(30px, 7vw, 56px);
+        line-height: 1;
+        font-weight: 950;
+      }
+
+      .index-copy {
+        max-width: 680px;
+        margin: 14px 0 30px;
+        color: #606268;
+        font-size: 17px;
+        line-height: 1.55;
+        font-weight: 650;
+      }
+
+      .mock-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .mock-card {
+        display: block;
+        min-height: 210px;
+        padding: 18px;
+        border: 1px solid #d8d2c6;
+        border-radius: 8px;
+        background: white;
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .mock-card:hover {
+        border-color: #151515;
+      }
+
+      .mock-label {
+        color: #1d6f5f;
+        font-size: 12px;
+        font-weight: 950;
+        text-transform: uppercase;
+      }
+
+      .mock-card h2 {
+        margin: 14px 0 10px;
+        font-size: 26px;
+        line-height: 1.05;
+      }
+
+      .mock-card p {
+        margin: 0;
+        color: #62656a;
+        font-size: 15px;
+        line-height: 1.45;
+        font-weight: 650;
+      }
+
+      @media (max-width: 720px) {
+        .mock-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="index-wrap">
+      <h1 class="index-title">Live Caption UI Mocks</h1>
+      <p class="index-copy">
+        개인 모바일 사용을 우선으로 잡은 네 가지 정적 목업입니다. 기능은 없고
+        실제 자막 샘플이 들어간 화면 구성만 비교합니다.
+      </p>
+
+      <section class="mock-grid">
+        <a class="mock-card" href="./option-a-reader.html">
+          <span class="mock-label">Option A</span>
+          <h2>Reader</h2>
+          <p>
+            읽기 편한 모바일 리더형. 번역을 기사처럼 편하게 보고 원문은 아래에
+            작게 둡니다.
+          </p>
+        </a>
+        <a class="mock-card" href="./option-b-caption-focus.html">
+          <span class="mock-label">Option B</span>
+          <h2>Caption Focus</h2>
+          <p>
+            고대비 큰 자막형. 발표장/이동 중에도 한국어 번역만 빠르게 읽는
+            화면입니다.
+          </p>
+        </a>
+        <a class="mock-card" href="./option-c-compare.html">
+          <span class="mock-label">Option C</span>
+          <h2>Compare</h2>
+          <p>
+            번역과 원문을 함께 보는 비교형. PC 30% 사용까지 고려한 균형형입니다.
+          </p>
+        </a>
+        <a class="mock-card" href="./option-d-compact.html">
+          <span class="mock-label">Option D</span>
+          <h2>Compact</h2>
+          <p>
+            최대한 도구답게 정리한 컴팩트형. 작은 화면에서 정보 밀도를 높입니다.
+          </p>
+        </a>
+      </section>
+    </main>
+  </body>
+</html>

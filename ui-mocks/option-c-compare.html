@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option C - Compare</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      :root {
+        --bg: #f5f7f4;
+        --surface: #ffffff;
+        --surface-soft: #eef3ee;
+        --ink: #17201b;
+        --muted: #66706a;
+        --line: #d4ddd5;
+        --accent: #1d6f5f;
+      }
+
+      .compare-content {
+        display: grid;
+        grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
+        gap: 12px;
+        padding: 12px;
+      }
+
+      .compare-panel {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 16px;
+      }
+
+      .compare-panel.primary {
+        border-color: #bed4c7;
+      }
+
+      .compare-list {
+        display: grid;
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .compare-list .translation-line {
+        border-left: 4px solid #d6e1d8;
+        padding-left: 12px;
+        font-size: clamp(28px, 8.2vw, 58px);
+      }
+
+      .compare-list .translation-line.live {
+        border-left-color: var(--accent);
+      }
+
+      .original-stack {
+        display: grid;
+        gap: 11px;
+        margin-top: 14px;
+      }
+
+      .original-stack .original-line {
+        border-left: 3px solid #dce4dd;
+        padding-left: 10px;
+      }
+
+      @media (min-width: 860px) {
+        .compare-content {
+          grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+          grid-template-rows: minmax(0, 1fr);
+          padding: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="mock-shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1 class="brand-title">Live Conference Captions</h1>
+          <p class="brand-subtitle">번역 / 원문 비교형</p>
+        </div>
+        <div class="top-actions">
+          <span class="status">Live</span>
+          <button class="mode">EN → KO</button>
+          <button class="ghost-action">Clear</button>
+          <button class="primary-action">Stop</button>
+        </div>
+      </header>
+
+      <section class="content compare-content">
+        <article class="panel compare-panel primary">
+          <h2 class="panel-title">한국어 번역</h2>
+          <div class="compare-list">
+            <p class="translation-line old">
+              이 컨퍼런스는 특정 분야의 최신 발전을 소개하는 데 중요한 역할을
+              했습니다.
+            </p>
+            <p class="translation-line old">
+              라이브 스트리밍을 통해 우리의 도달 범위는 훨씬 더 넓어집니다.
+            </p>
+            <p class="translation-line">
+              그래서 저는 비전공자와 학생들에게 무엇을 전달하고 싶은지
+              물었습니다.
+            </p>
+            <p class="translation-line live">
+              소재와 제조에서 인공지능이 실제로 어떤 변화를 만드는지 보여주고자
+              합니다.
+            </p>
+          </div>
+        </article>
+
+        <aside class="panel compare-panel">
+          <h2 class="panel-title">English original</h2>
+          <div class="original-stack">
+            <p class="original-line">
+              Over the years, the Welch Conference has been instrumental in
+              bringing the latest developments in a particular field.
+            </p>
+            <p class="original-line">
+              Now with live streaming, we can extend our reach so much further.
+            </p>
+            <p class="original-line">
+              So I asked myself, what would I want to convey to non-scientists?
+            </p>
+            <p class="original-line">
+              I want to show how AI changes materials research and manufacturing.
+            </p>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

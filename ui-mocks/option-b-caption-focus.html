@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option B - Caption Focus</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      :root {
+        --bg: #101112;
+        --surface: #181a1c;
+        --surface-soft: #232629;
+        --ink: #f7f6ef;
+        --muted: #aaa79d;
+        --line: #303236;
+        --accent: #f2c14e;
+      }
+
+      .topbar {
+        background: #111315;
+      }
+
+      .mode,
+      .ghost-action {
+        background: #181a1c;
+        color: var(--ink);
+      }
+
+      .primary-action {
+        background: #f2c14e;
+        color: #151515;
+      }
+
+      .focus-content {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      .focus-stage {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        justify-content: flex-end;
+        overflow-y: auto;
+        border: 0;
+        background: transparent;
+        padding: 8px 2px 12px;
+      }
+
+      .caption-row {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        margin-top: 18px;
+      }
+
+      .caption-row .translation-line {
+        font-size: clamp(34px, 10.5vw, 76px);
+      }
+
+      .caption-row.old .translation-line {
+        color: #928f87;
+        font-size: clamp(24px, 7vw, 44px);
+      }
+
+      .caption-row.live .caption-index {
+        background: var(--accent);
+        color: #151515;
+      }
+
+      .caption-row.live .translation-line {
+        color: var(--accent);
+      }
+
+      .focus-footer {
+        border-top: 1px solid var(--line);
+        padding: 12px 0 0;
+      }
+
+      .focus-footer .original-line {
+        color: #aaa79d;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="mock-shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1 class="brand-title">Caption Focus</h1>
+          <p class="brand-subtitle">큰 글씨 · 고대비</p>
+        </div>
+        <div class="top-actions">
+          <span class="status">Live</span>
+          <button class="mode">EN → KO</button>
+          <button class="primary-action">Stop</button>
+        </div>
+      </header>
+
+      <section class="content focus-content">
+        <article class="focus-stage">
+          <div class="caption-row old">
+            <span class="caption-index">1</span>
+            <p class="translation-line">
+              웰치 컨퍼런스는 최신 발전을 과학자들에게 전달하는 데 중요한 역할을
+              해왔습니다.
+            </p>
+          </div>
+          <div class="caption-row old">
+            <span class="caption-index">2</span>
+            <p class="translation-line">
+              이제 라이브 스트리밍으로 더 많은 사람들에게 도달할 수 있습니다.
+            </p>
+          </div>
+          <div class="caption-row">
+            <span class="caption-index">3</span>
+            <p class="translation-line">
+              그래서 저는 비전공자에게 무엇을 전달하고 싶은지 생각했습니다.
+            </p>
+          </div>
+          <div class="caption-row live">
+            <span class="caption-index">4</span>
+            <p class="translation-line">
+              오늘은 AI가 소재와 제조를 어떻게 바꾸는지 살펴봅니다.
+            </p>
+          </div>
+        </article>
+
+        <aside class="focus-footer">
+          <p class="original-line">
+            So I asked myself, what would I want to convey to non-scientists and
+            students?
+          </p>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>
