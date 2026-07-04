@@ -2,8 +2,8 @@
 
 import { useRecording } from "@soniox/react";
 import type { RecordingState, SttSessionConfig } from "@soniox/client";
-import { Play, RotateCcw, Square } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Clock3, Play, RotateCcw, Square } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type CaptionMode = "en-ko" | "ko-en";
 type AppStatus =
@@ -15,7 +15,13 @@ type AppStatus =
   | "Stopped"
   | "Error";
 
+type SonioxConnectionConfig = {
+  api_key: string;
+};
+
 const AUTO_FINALIZE_MS = 7000;
+const SESSION_LIMIT_MS = 30 * 60 * 1000;
+const SESSION_WARNING_MS = 5 * 60 * 1000;
 const DISPLAY_UTTERANCE_COUNT = 5;
 const MAX_CAPTION_CHARS = 62;
 const DEFAULT_TERMS = [
@@ -65,6 +71,29 @@ const TRANSLATION_TERMS = [
   ["elastic modulus", "탄성계수"],
 ].map(([source, target]) => ({ source, target }));
 
+async function requestSonioxConnectionConfig(): Promise<SonioxConnectionConfig> {
+  const response = await fetch("/api/soniox/temporary-key", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  const data = (await response.json().catch(() => null)) as
+    | {
+        api_key?: string;
+        error?: string;
+        max_session_duration_seconds?: number;
+      }
+    | null;
+
+  if (!response.ok || !data?.api_key) {
+    throw new Error(data?.error || "Failed to request Soniox temporary key.");
+  }
+
+  return { api_key: data.api_key };
+}
+
 function statusFromRecordingState(
   state: RecordingState,
   isReconnecting: boolean,
@@ -89,6 +118,10 @@ function humanErrorMessage(error: Error | null, unsupportedReason?: string) {
   }
   if (!error) {
     return null;
+  }
+
+  if (error.message.includes("30분 사용 제한")) {
+    return error.message;
   }
 
   const message = error.message.toLowerCase();
@@ -162,7 +195,21 @@ function displayCaptionLines(text: string, partialText: string) {
   }));
 }
 
-function StatusBadge({ status }: { status: AppStatus }) {
+function formatDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function StatusBadge({
+  elapsedMs,
+  status,
+}: {
+  elapsedMs?: number | null;
+  status: AppStatus;
+}) {
   const className =
     status === "Live"
       ? "border-transparent bg-[#e3f4ed] text-[#0e5c4a]"
@@ -178,6 +225,9 @@ function StatusBadge({ status }: { status: AppStatus }) {
     >
       {status === "Live" && <span className="size-2 rounded-full bg-[#19a873]" />}
       {status}
+      {status === "Live" && elapsedMs !== null && elapsedMs !== undefined && (
+        <span className="tabular-nums">{formatDuration(elapsedMs)}</span>
+      )}
     </span>
   );
 }
@@ -186,11 +236,13 @@ function IconButton({
   children,
   disabled,
   onClick,
+  title,
   variant = "secondary",
 }: {
   children: React.ReactNode;
   disabled?: boolean;
   onClick: () => void;
+  title?: string;
   variant?: "primary" | "secondary" | "danger";
 }) {
   const variants = {
@@ -204,6 +256,7 @@ function IconButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      title={title}
       className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-medium leading-none transition disabled:cursor-not-allowed disabled:opacity-45 ${variants[variant]}`}
     >
       {children}
@@ -215,26 +268,9 @@ export default function LiveCaptionApp() {
   const [mode, setMode] = useState<CaptionMode>("en-ko");
   const [statusOverride, setStatusOverride] = useState<AppStatus>("Ready");
   const [manualError, setManualError] = useState<Error | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const translatedEndRef = useRef<HTMLDivElement | null>(null);
-
-  const connectionConfig = useCallback(async () => {
-    const response = await fetch("/api/soniox/temporary-key", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    const data = (await response.json().catch(() => null)) as
-      | { api_key?: string; error?: string }
-      | null;
-
-    if (!response.ok || !data?.api_key) {
-      throw new Error(data?.error || "Failed to request Soniox temporary key.");
-    }
-
-    return { api_key: data.api_key };
-  }, []);
 
   const sessionConfig = useMemo<SttSessionConfig>(
     () => ({
@@ -263,9 +299,10 @@ export default function LiveCaptionApp() {
   );
 
   const recording = useRecording({
-    config: connectionConfig,
+    config: requestSonioxConnectionConfig,
     ...sessionConfig,
     groupBy: "translation",
+    resetOnStart: false,
     auto_reconnect: true,
     max_reconnect_attempts: 5,
     reconnect_base_delay_ms: 1000,
@@ -275,14 +312,19 @@ export default function LiveCaptionApp() {
       setStatusOverride("Error");
     },
     onConnected: () => {
+      const connectedAt = Date.now();
+
       setManualError(null);
       setStatusOverride("Live");
+      setNow(connectedAt);
+      setSessionExpiresAt(connectedAt + SESSION_LIMIT_MS);
     },
     onReconnecting: () => {
       setStatusOverride("Reconnecting");
     },
     onFinished: () => {
       setStatusOverride("Stopped");
+      setSessionExpiresAt(null);
     },
   });
 
@@ -298,6 +340,30 @@ export default function LiveCaptionApp() {
     return () => window.clearInterval(id);
   }, [recording]);
 
+  useEffect(() => {
+    if (!recording.isActive) {
+      return;
+    }
+
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+
+    return () => window.clearInterval(id);
+  }, [recording.isActive]);
+
+  useEffect(() => {
+    if (!recording.isActive || sessionExpiresAt === null || now < sessionExpiresAt) {
+      return;
+    }
+
+    void recording.stop().finally(() => {
+      setStatusOverride("Stopped");
+      setSessionExpiresAt(null);
+      setManualError(
+        new Error("30분 사용 제한으로 자동 정지되었습니다. 계속 사용하려면 Start를 다시 눌러 주세요."),
+      );
+    });
+  }, [now, recording, sessionExpiresAt]);
+
   const status = statusFromRecordingState(
     recording.state,
     recording.isReconnecting,
@@ -305,6 +371,14 @@ export default function LiveCaptionApp() {
   );
   const effectiveError = manualError || recording.error;
   const errorMessage = humanErrorMessage(effectiveError, recording.unsupportedReason);
+  const remainingSessionMs =
+    recording.isActive && sessionExpiresAt !== null
+      ? Math.max(0, sessionExpiresAt - now)
+      : null;
+  const elapsedSessionMs =
+    remainingSessionMs !== null ? SESSION_LIMIT_MS - remainingSessionMs : null;
+  const isSessionWarning =
+    remainingSessionMs !== null && remainingSessionMs <= SESSION_WARNING_MS;
 
   const original = recording.groups.original;
   const translation = recording.groups.translation;
@@ -347,6 +421,19 @@ export default function LiveCaptionApp() {
   async function handleStop() {
     await recording.stop();
     setStatusOverride("Stopped");
+    setSessionExpiresAt(null);
+  }
+
+  async function handleExtend() {
+    if (!recording.isActive) {
+      await handleStart();
+      return;
+    }
+
+    setManualError(null);
+    setStatusOverride("Requesting microphone");
+    await recording.stop();
+    recording.start();
   }
 
   async function switchMode(nextMode: CaptionMode) {
@@ -356,14 +443,24 @@ export default function LiveCaptionApp() {
     }
     setMode(nextMode);
     setStatusOverride("Stopped");
+    setSessionExpiresAt(null);
   }
 
   return (
     <main className="flex h-dvh overflow-hidden flex-col bg-[#f5f7f4] text-[#17201b]">
       <header className="shrink-0 border-b border-[#d4ddd5] bg-white px-2.5 py-2.5 sm:px-5">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2">
-          <StatusBadge status={status} />
+          <StatusBadge elapsedMs={elapsedSessionMs} status={status} />
           <div className="flex items-center gap-2">
+            {isSessionWarning && (
+              <IconButton
+                onClick={() => void handleExtend()}
+                title="30분 세션을 새로 시작합니다."
+              >
+                <Clock3 className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
+                <span className="sr-only">Extend</span>
+              </IconButton>
+            )}
             <button
               type="button"
               onClick={() => void switchMode(mode === "en-ko" ? "ko-en" : "en-ko")}
@@ -373,7 +470,7 @@ export default function LiveCaptionApp() {
             </button>
             <IconButton onClick={recording.clearTranscript}>
               <RotateCcw className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
-              Clear
+              <span className="sr-only sm:not-sr-only">Clear</span>
             </IconButton>
             <IconButton
               variant={recording.isActive ? "danger" : "primary"}

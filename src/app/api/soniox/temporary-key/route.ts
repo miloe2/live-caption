@@ -1,4 +1,5 @@
 import { SonioxHttpError, SonioxNodeClient } from "@soniox/node";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -6,9 +7,28 @@ export const runtime = "nodejs";
 type TemporaryKeyResponse = {
   api_key: string;
   expires_at: string;
+  max_session_duration_seconds: number;
 };
 
+const MAX_SESSION_DURATION_SECONDS = 30 * 60;
+const ACCESS_COOKIE_NAME = "live_caption_access";
+const ACCESS_COOKIE_VALUE = "granted";
+
 export async function POST() {
+  const cookieStore = await cookies();
+  const hasAccess =
+    cookieStore.get(ACCESS_COOKIE_NAME)?.value === ACCESS_COOKIE_VALUE;
+
+  if (!hasAccess) {
+    return NextResponse.json(
+      {
+        error: "Access code required.",
+        code: "access_required",
+      },
+      { status: 401 },
+    );
+  }
+
   const apiKey = process.env.SONIOX_API_KEY;
 
   if (!apiKey) {
@@ -27,13 +47,14 @@ export async function POST() {
       usage_type: "transcribe_websocket",
       expires_in_seconds: 300,
       single_use: true,
-      max_session_duration_seconds: 18_000,
+      max_session_duration_seconds: MAX_SESSION_DURATION_SECONDS,
       client_reference_id: "live-caption-web",
     });
 
     const response: TemporaryKeyResponse = {
       api_key: temporaryKey.api_key,
       expires_at: temporaryKey.expires_at,
+      max_session_duration_seconds: MAX_SESSION_DURATION_SECONDS,
     };
 
     return NextResponse.json(response, {

@@ -16,17 +16,21 @@ The browser never receives `SONIOX_API_KEY`. It calls `POST /api/soniox/temporar
 
 Before production deployment, protect the temporary key endpoint. For this MVP, use one of:
 
+- The built-in shared access code gate with `ACCESS_PASSWORD`.
 - Deployment platform access protection for the whole app.
-- A shared access code in front of the API route.
 - Network/IP allowlisting if the conference network is predictable.
 
 Do not put `SONIOX_API_KEY` in `NEXT_PUBLIC_*` variables.
+
+The built-in access gate redirects first-time visitors to `/access`. A correct
+`ACCESS_PASSWORD` sets an httpOnly session cookie, and
+`POST /api/soniox/temporary-key` rejects requests without that cookie.
 
 ## Local Setup
 
 ```bash
 cp .env.example .env.local
-# SONIOX_API_KEY 입력
+# SONIOX_API_KEY, ACCESS_PASSWORD 입력
 npm install
 npm run dev
 npm run lint
