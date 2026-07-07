@@ -2,7 +2,7 @@
 
 import { useRecording } from "@soniox/react";
 import type { RecordingState, SttSessionConfig } from "@soniox/client";
-import { Clock3, Play, RotateCcw, Square } from "lucide-react";
+import { Clock3, Download, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type CaptionMode = "en-ko" | "ko-en";
@@ -17,6 +17,14 @@ type AppStatus =
 
 type SonioxConnectionConfig = {
   api_key: string;
+};
+
+type CaptionDownloadSnapshot = {
+  mode: CaptionMode;
+  originalPartialText: string;
+  originalText: string;
+  partialText: string;
+  text: string;
 };
 
 const AUTO_FINALIZE_MS = 7000;
@@ -203,6 +211,68 @@ function formatDuration(milliseconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+function formatTimestampForFilename(date: Date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
+
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+function buildTranslationDownloadText({
+  mode,
+  originalPartialText,
+  originalText,
+  partialText,
+  text,
+}: CaptionDownloadSnapshot) {
+  const savedAt = new Date();
+  const direction = mode === "en-ko" ? "EN -> KO" : "KO -> EN";
+  const translatedTitle = mode === "en-ko" ? "번역본 (한국어)" : "Translation (English)";
+  const originalTitle = mode === "en-ko" ? "원문 (English)" : "Original (한국어)";
+  const sections = [
+    "Live Conference Captions",
+    `Saved at: ${savedAt.toLocaleString()}`,
+    `Mode: ${direction}`,
+    "",
+    translatedTitle,
+    "",
+    text.trim(),
+    "",
+    originalTitle,
+    "",
+    originalText.trim(),
+  ];
+
+  const cleanPartialText = partialText.trim();
+  const cleanOriginalPartialText = originalPartialText.trim();
+  if (cleanPartialText) {
+    sections.push("", "In-progress translation partial", "", cleanPartialText);
+  }
+  if (cleanOriginalPartialText) {
+    sections.push("", "In-progress original partial", "", cleanOriginalPartialText);
+  }
+
+  return sections.join("\n");
+}
+
+function downloadTextFile(filename: string, text: string) {
+  const blob = new Blob(["\ufeff", text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function StatusBadge({
   elapsedMs,
   status,
@@ -269,8 +339,47 @@ export default function LiveCaptionApp() {
   const [statusOverride, setStatusOverride] = useState<AppStatus>("Ready");
   const [manualError, setManualError] = useState<Error | null>(null);
   const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
+  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const translatedEndRef = useRef<HTMLDivElement | null>(null);
+  const downloadedSessionRef = useRef(false);
+  const latestTranslationRef = useRef<CaptionDownloadSnapshot>({
+    mode,
+    originalPartialText: "",
+    originalText: "",
+    partialText: "",
+    text: "",
+  });
+
+  function downloadCurrentTranslation({ once }: { once: boolean }) {
+    if (once && downloadedSessionRef.current) {
+      return;
+    }
+
+    const snapshot = latestTranslationRef.current;
+    const hasText = Boolean(
+      snapshot.text.trim() ||
+        snapshot.partialText.trim() ||
+        snapshot.originalText.trim() ||
+        snapshot.originalPartialText.trim(),
+    );
+
+    if (!hasText) {
+      setDownloadMessage("다운로드할 번역 내용이 없습니다.");
+      return;
+    }
+
+    const savedAt = new Date();
+    const filename = `live-caption-${formatTimestampForFilename(savedAt)}-${snapshot.mode}.txt`;
+
+    try {
+      downloadTextFile(filename, buildTranslationDownloadText(snapshot));
+      downloadedSessionRef.current = true;
+      setDownloadMessage(`${filename} 다운로드를 시작했습니다.`);
+    } catch {
+      setDownloadMessage("자동 다운로드에 실패했습니다. Download 버튼을 다시 눌러 주세요.");
+    }
+  }
 
   const sessionConfig = useMemo<SttSessionConfig>(
     () => ({
@@ -308,12 +417,15 @@ export default function LiveCaptionApp() {
     reconnect_base_delay_ms: 1000,
     reset_transcript_on_reconnect: false,
     onError: (error) => {
+      downloadCurrentTranslation({ once: true });
       setManualError(error);
       setStatusOverride("Error");
     },
     onConnected: () => {
       const connectedAt = Date.now();
 
+      downloadedSessionRef.current = false;
+      setDownloadMessage(null);
       setManualError(null);
       setStatusOverride("Live");
       setNow(connectedAt);
@@ -323,6 +435,7 @@ export default function LiveCaptionApp() {
       setStatusOverride("Reconnecting");
     },
     onFinished: () => {
+      downloadCurrentTranslation({ once: true });
       setStatusOverride("Stopped");
       setSessionExpiresAt(null);
     },
@@ -394,9 +507,25 @@ export default function LiveCaptionApp() {
   const originalLines = displayCaptionLines(original?.text || "", originalPartial);
   const hasTranslatedText = translatedLines.length > 0;
   const hasOriginalText = originalLines.length > 0;
+  const hasDownloadableTranslation = Boolean(
+    (translation?.text || "").trim() ||
+      translatedPartial.trim() ||
+      (original?.text || "").trim() ||
+      originalPartial.trim(),
+  );
   const translatedScrollKey = translatedLines
     .map((line) => `${line.text}:${line.isPartial}`)
     .join("|");
+
+  useEffect(() => {
+    latestTranslationRef.current = {
+      mode,
+      originalPartialText: originalPartial,
+      originalText: original?.text || "",
+      partialText: translatedPartial,
+      text: translation?.text || "",
+    };
+  }, [mode, original?.text, originalPartial, translatedPartial, translation?.text]);
 
   useEffect(() => {
     translatedEndRef.current?.scrollIntoView({
@@ -407,6 +536,7 @@ export default function LiveCaptionApp() {
 
   async function handleStart() {
     setManualError(null);
+    setDownloadMessage(null);
 
     if (!recording.isSupported) {
       setManualError(new Error(recording.unsupportedReason || "Unsupported browser"));
@@ -420,6 +550,7 @@ export default function LiveCaptionApp() {
 
   async function handleStop() {
     await recording.stop();
+    downloadCurrentTranslation({ once: true });
     setStatusOverride("Stopped");
     setSessionExpiresAt(null);
   }
@@ -473,6 +604,14 @@ export default function LiveCaptionApp() {
               <span className="sr-only sm:not-sr-only">Clear</span>
             </IconButton>
             <IconButton
+              disabled={!hasDownloadableTranslation}
+              onClick={() => downloadCurrentTranslation({ once: false })}
+              title="현재 번역 내용을 .txt 파일로 다운로드합니다."
+            >
+              <Download className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
+              <span className="sr-only sm:not-sr-only">Download</span>
+            </IconButton>
+            <IconButton
               variant={recording.isActive ? "danger" : "primary"}
               onClick={() =>
                 recording.isActive ? void handleStop() : void handleStart()
@@ -488,6 +627,12 @@ export default function LiveCaptionApp() {
           </div>
         </div>
       </header>
+
+      {downloadMessage && (
+        <div className="border-b border-[#d4ddd5] bg-[#edf3ee] px-4 py-2 text-center text-xs font-medium text-[#26332c]">
+          {downloadMessage}
+        </div>
+      )}
 
       {mode === "ko-en" && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm font-semibold text-amber-900">
