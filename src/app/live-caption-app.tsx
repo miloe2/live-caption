@@ -2,7 +2,7 @@
 
 import { useRecording } from "@soniox/react";
 import type { RecordingState, SttSessionConfig } from "@soniox/client";
-import { Clock3, Download, Play, RotateCcw, Square } from "lucide-react";
+import { Clock3, Download, Play, RotateCcw, Sparkles, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type CaptionMode = "en-ko" | "ko-en";
@@ -27,10 +27,14 @@ type CaptionDownloadSnapshot = {
   text: string;
 };
 
+type CaptionSummaryResponse = {
+  summary?: string;
+  error?: string;
+};
+
 const AUTO_FINALIZE_MS = 7000;
-const SESSION_LIMIT_MS = 30 * 60 * 1000;
+const SESSION_LIMIT_MS = 60 * 60 * 1000;
 const SESSION_WARNING_MS = 5 * 60 * 1000;
-const DISPLAY_UTTERANCE_COUNT = 5;
 const MAX_CAPTION_CHARS = 62;
 const DEFAULT_TERMS = [
   "grain boundary",
@@ -194,7 +198,7 @@ function displayCaptionLines(text: string, partialText: string) {
   const partialLines = splitCaptionText(partialText);
   const partialStart = Math.max(0, fullLines.length - partialLines.length);
 
-  return fullLines.slice(-DISPLAY_UTTERANCE_COUNT).map((lineText, index, lines) => ({
+  return fullLines.map((lineText, index, lines) => ({
     id: `${index}-${lineText}`,
     text: lineText,
     isPartial:
@@ -228,7 +232,8 @@ function buildTranslationDownloadText({
   originalText,
   partialText,
   text,
-}: CaptionDownloadSnapshot) {
+  summary,
+}: CaptionDownloadSnapshot & { summary?: string }) {
   const savedAt = new Date();
   const direction = mode === "en-ko" ? "EN -> KO" : "KO -> EN";
   const translatedTitle = mode === "en-ko" ? "번역본 (한국어)" : "Translation (English)";
@@ -238,6 +243,7 @@ function buildTranslationDownloadText({
     `Saved at: ${savedAt.toLocaleString()}`,
     `Mode: ${direction}`,
     "",
+    ...(summary?.trim() ? ["AI Summary", "", summary.trim(), ""] : []),
     translatedTitle,
     "",
     text.trim(),
@@ -271,6 +277,27 @@ function downloadTextFile(filename: string, text: string) {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function requestCaptionSummary(snapshot: CaptionDownloadSnapshot) {
+  const response = await fetch("/api/gemini/summary", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(snapshot),
+  });
+
+  const data = (await response.json().catch(() => null)) as
+    | CaptionSummaryResponse
+    | null;
+
+  if (!response.ok || !data?.summary) {
+    throw new Error(data?.error || "AI 요약 생성에 실패했습니다.");
+  }
+
+  return data.summary;
 }
 
 function StatusBadge({
@@ -340,8 +367,10 @@ export default function LiveCaptionApp() {
   const [manualError, setManualError] = useState<Error | null>(null);
   const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const translatedEndRef = useRef<HTMLDivElement | null>(null);
+  const originalEndRef = useRef<HTMLDivElement | null>(null);
   const downloadedSessionRef = useRef(false);
   const latestTranslationRef = useRef<CaptionDownloadSnapshot>({
     mode,
@@ -378,6 +407,41 @@ export default function LiveCaptionApp() {
       setDownloadMessage(`${filename} 다운로드를 시작했습니다.`);
     } catch {
       setDownloadMessage("자동 다운로드에 실패했습니다. Download 버튼을 다시 눌러 주세요.");
+    }
+  }
+
+  async function downloadCurrentTranslationWithSummary() {
+    const snapshot = latestTranslationRef.current;
+    const hasText = Boolean(
+      snapshot.text.trim() ||
+        snapshot.partialText.trim() ||
+        snapshot.originalText.trim() ||
+        snapshot.originalPartialText.trim(),
+    );
+
+    if (!hasText) {
+      setDownloadMessage("요약할 번역 내용이 없습니다.");
+      return;
+    }
+
+    setIsSummarizing(true);
+    setDownloadMessage("AI 요약을 생성하는 중입니다.");
+
+    try {
+      const summary = await requestCaptionSummary(snapshot);
+      const savedAt = new Date();
+      const filename = `live-caption-summary-${formatTimestampForFilename(savedAt)}-${snapshot.mode}.txt`;
+
+      downloadTextFile(filename, buildTranslationDownloadText({ ...snapshot, summary }));
+      setDownloadMessage(`${filename} 다운로드를 시작했습니다.`);
+    } catch (error) {
+      setDownloadMessage(
+        error instanceof Error
+          ? error.message
+          : "AI 요약 생성에 실패했습니다.",
+      );
+    } finally {
+      setIsSummarizing(false);
     }
   }
 
@@ -472,7 +536,7 @@ export default function LiveCaptionApp() {
       setStatusOverride("Stopped");
       setSessionExpiresAt(null);
       setManualError(
-        new Error("30분 사용 제한으로 자동 정지되었습니다. 계속 사용하려면 Start를 다시 눌러 주세요."),
+        new Error("1시간 사용 제한으로 자동 정지되었습니다. 계속 사용하려면 Start를 다시 눌러 주세요."),
       );
     });
   }, [now, recording, sessionExpiresAt]);
@@ -516,6 +580,9 @@ export default function LiveCaptionApp() {
   const translatedScrollKey = translatedLines
     .map((line) => `${line.text}:${line.isPartial}`)
     .join("|");
+  const originalScrollKey = originalLines
+    .map((line) => `${line.text}:${line.isPartial}`)
+    .join("|");
 
   useEffect(() => {
     latestTranslationRef.current = {
@@ -533,6 +600,13 @@ export default function LiveCaptionApp() {
       block: "end",
     });
   }, [translatedScrollKey]);
+
+  useEffect(() => {
+    originalEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [originalScrollKey]);
 
   async function handleStart() {
     setManualError(null);
@@ -586,7 +660,7 @@ export default function LiveCaptionApp() {
             {isSessionWarning && (
               <IconButton
                 onClick={() => void handleExtend()}
-                title="30분 세션을 새로 시작합니다."
+                title="1시간 세션을 새로 시작합니다."
               >
                 <Clock3 className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
                 <span className="sr-only">Extend</span>
@@ -610,6 +684,16 @@ export default function LiveCaptionApp() {
             >
               <Download className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
               <span className="sr-only sm:not-sr-only">Download</span>
+            </IconButton>
+            <IconButton
+              disabled={!hasDownloadableTranslation || isSummarizing}
+              onClick={() => void downloadCurrentTranslationWithSummary()}
+              title="Gemini AI 요약을 포함한 .txt 파일을 다운로드합니다."
+            >
+              <Sparkles className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
+              <span className="sr-only sm:not-sr-only">
+                {isSummarizing ? "Summarizing" : "AI Summary"}
+              </span>
             </IconButton>
             <IconButton
               variant={recording.isActive ? "danger" : "primary"}
@@ -709,6 +793,7 @@ export default function LiveCaptionApp() {
                     {line.text}
                   </p>
                 ))}
+                <div ref={originalEndRef} />
               </div>
             </div>
           </article>
