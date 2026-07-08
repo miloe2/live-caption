@@ -1,11 +1,14 @@
 "use client";
 
 import { useRecording } from "@soniox/react";
-import type { RecordingState, SttSessionConfig } from "@soniox/client";
-import { Clock3, Download, Play, RotateCcw, Sparkles, Square } from "lucide-react";
+import type { RecordingState } from "@soniox/client";
+import { Clock3, Play, RotateCcw, Sparkles, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { displayCaptionLines, formatDuration, hasCaptionText } from "./caption-format";
+import { downloadCaptionSummary } from "./caption-summary-download.client";
+import type { CaptionMode, CaptionSnapshot } from "./live-caption-types";
+import { createSessionConfig } from "./soniox-session-config";
 
-type CaptionMode = "en-ko" | "ko-en";
 type AppStatus =
   | "Ready"
   | "Requesting microphone"
@@ -19,69 +22,9 @@ type SonioxConnectionConfig = {
   api_key: string;
 };
 
-type CaptionDownloadSnapshot = {
-  mode: CaptionMode;
-  originalPartialText: string;
-  originalText: string;
-  partialText: string;
-  text: string;
-};
-
-type CaptionSummaryResponse = {
-  summary?: string;
-  error?: string;
-};
-
 const AUTO_FINALIZE_MS = 7000;
 const SESSION_LIMIT_MS = 60 * 60 * 1000;
 const SESSION_WARNING_MS = 5 * 60 * 1000;
-const MAX_CAPTION_CHARS = 62;
-const DEFAULT_TERMS = [
-  "grain boundary",
-  "dislocation",
-  "annealing",
-  "phase transformation",
-  "yield strength",
-  "tensile strength",
-  "thin film",
-  "deposition",
-  "scanning electron microscopy",
-  "SEM",
-  "X-ray diffraction",
-  "XRD",
-  "microstructure",
-  "crystal structure",
-  "diffusion",
-  "fatigue",
-  "creep",
-  "fracture toughness",
-  "elastic modulus",
-  "hardness",
-  "nanostructure",
-  "sintering",
-  "alloy",
-  "composite",
-  "corrosion",
-];
-
-const TRANSLATION_TERMS = [
-  ["grain boundary", "결정립계"],
-  ["dislocation", "전위"],
-  ["annealing", "어닐링"],
-  ["phase transformation", "상변태"],
-  ["yield strength", "항복강도"],
-  ["tensile strength", "인장강도"],
-  ["thin film", "박막"],
-  ["deposition", "증착"],
-  ["scanning electron microscopy", "주사전자현미경"],
-  ["X-ray diffraction", "X선 회절"],
-  ["microstructure", "미세구조"],
-  ["diffusion", "확산"],
-  ["fatigue", "피로"],
-  ["creep", "크리프"],
-  ["fracture toughness", "파괴인성"],
-  ["elastic modulus", "탄성계수"],
-].map(([source, target]) => ({ source, target }));
 
 async function requestSonioxConnectionConfig(): Promise<SonioxConnectionConfig> {
   const response = await fetch("/api/soniox/temporary-key", {
@@ -149,155 +92,6 @@ function humanErrorMessage(error: Error | null, unsupportedReason?: string) {
   }
 
   return "실시간 자막 처리 중 오류가 발생했습니다.";
-}
-
-function splitCaptionText(text: string) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return [];
-  }
-
-  const sentenceMatches = normalized.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g) || [normalized];
-
-  const captions: string[] = [];
-
-  for (const sentence of sentenceMatches) {
-    const cleanSentence = sentence.trim();
-    if (!cleanSentence) {
-      continue;
-    }
-
-    const phraseMatches =
-      cleanSentence.match(/[^,;:，；：]+[,;:，；：]+|[^,;:，；：]+$/g) || [
-        cleanSentence,
-      ];
-
-    const words = phraseMatches.flatMap((phrase) => phrase.trim().split(" "));
-    let line = "";
-
-    for (const word of words) {
-      const next = line ? `${line} ${word}` : word;
-      if (next.length > MAX_CAPTION_CHARS && line) {
-        captions.push(line);
-        line = word;
-      } else {
-        line = next;
-      }
-    }
-
-    if (line) {
-      captions.push(line);
-    }
-  }
-
-  return captions;
-}
-
-function displayCaptionLines(text: string, partialText: string) {
-  const fullLines = splitCaptionText(text);
-  const partialLines = splitCaptionText(partialText);
-  const partialStart = Math.max(0, fullLines.length - partialLines.length);
-
-  return fullLines.map((lineText, index, lines) => ({
-    id: `${index}-${lineText}`,
-    text: lineText,
-    isPartial:
-      partialLines.length > 0 &&
-      fullLines.length - lines.length + index >= partialStart,
-  }));
-}
-
-function formatDuration(milliseconds: number) {
-  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function formatTimestampForFilename(date: Date) {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const day = date.getDate().toString().padStart(2, "0");
-  const hours = date.getHours().toString().padStart(2, "0");
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  const seconds = date.getSeconds().toString().padStart(2, "0");
-
-  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
-}
-
-function buildTranslationDownloadText({
-  mode,
-  originalPartialText,
-  originalText,
-  partialText,
-  text,
-  summary,
-}: CaptionDownloadSnapshot & { summary?: string }) {
-  const savedAt = new Date();
-  const direction = mode === "en-ko" ? "EN -> KO" : "KO -> EN";
-  const translatedTitle = mode === "en-ko" ? "번역본 (한국어)" : "Translation (English)";
-  const originalTitle = mode === "en-ko" ? "원문 (English)" : "Original (한국어)";
-  const sections = [
-    "Live Conference Captions",
-    `Saved at: ${savedAt.toLocaleString()}`,
-    `Mode: ${direction}`,
-    "",
-    ...(summary?.trim() ? ["AI Summary", "", summary.trim(), ""] : []),
-    translatedTitle,
-    "",
-    text.trim(),
-    "",
-    originalTitle,
-    "",
-    originalText.trim(),
-  ];
-
-  const cleanPartialText = partialText.trim();
-  const cleanOriginalPartialText = originalPartialText.trim();
-  if (cleanPartialText) {
-    sections.push("", "In-progress translation partial", "", cleanPartialText);
-  }
-  if (cleanOriginalPartialText) {
-    sections.push("", "In-progress original partial", "", cleanOriginalPartialText);
-  }
-
-  return sections.join("\n");
-}
-
-function downloadTextFile(filename: string, text: string) {
-  const blob = new Blob(["\ufeff", text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function requestCaptionSummary(snapshot: CaptionDownloadSnapshot) {
-  const response = await fetch("/api/gemini/summary", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(snapshot),
-  });
-
-  const data = (await response.json().catch(() => null)) as
-    | CaptionSummaryResponse
-    | null;
-
-  if (!response.ok || !data?.summary) {
-    throw new Error(data?.error || "AI 요약 생성에 실패했습니다.");
-  }
-
-  return data.summary;
 }
 
 function StatusBadge({
@@ -371,8 +165,8 @@ export default function LiveCaptionApp() {
   const [now, setNow] = useState(() => Date.now());
   const translatedEndRef = useRef<HTMLDivElement | null>(null);
   const originalEndRef = useRef<HTMLDivElement | null>(null);
-  const downloadedSessionRef = useRef(false);
-  const latestTranslationRef = useRef<CaptionDownloadSnapshot>({
+  const sessionStartedAtRef = useRef<Date | null>(null);
+  const latestCaptionSnapshotRef = useRef<CaptionSnapshot>({
     mode,
     originalPartialText: "",
     originalText: "",
@@ -380,59 +174,16 @@ export default function LiveCaptionApp() {
     text: "",
   });
 
-  function downloadCurrentTranslation({ once }: { once: boolean }) {
-    if (once && downloadedSessionRef.current) {
-      return;
-    }
-
-    const snapshot = latestTranslationRef.current;
-    const hasText = Boolean(
-      snapshot.text.trim() ||
-        snapshot.partialText.trim() ||
-        snapshot.originalText.trim() ||
-        snapshot.originalPartialText.trim(),
-    );
-
-    if (!hasText) {
-      setDownloadMessage("다운로드할 번역 내용이 없습니다.");
-      return;
-    }
-
-    const savedAt = new Date();
-    const filename = `live-caption-${formatTimestampForFilename(savedAt)}-${snapshot.mode}.txt`;
-
-    try {
-      downloadTextFile(filename, buildTranslationDownloadText(snapshot));
-      downloadedSessionRef.current = true;
-      setDownloadMessage(`${filename} 다운로드를 시작했습니다.`);
-    } catch {
-      setDownloadMessage("자동 다운로드에 실패했습니다. Download 버튼을 다시 눌러 주세요.");
-    }
-  }
-
   async function downloadCurrentTranslationWithSummary() {
-    const snapshot = latestTranslationRef.current;
-    const hasText = Boolean(
-      snapshot.text.trim() ||
-        snapshot.partialText.trim() ||
-        snapshot.originalText.trim() ||
-        snapshot.originalPartialText.trim(),
-    );
-
-    if (!hasText) {
-      setDownloadMessage("요약할 번역 내용이 없습니다.");
-      return;
-    }
-
     setIsSummarizing(true);
     setDownloadMessage("AI 요약을 생성하는 중입니다.");
 
     try {
-      const summary = await requestCaptionSummary(snapshot);
-      const savedAt = new Date();
-      const filename = `live-caption-summary-${formatTimestampForFilename(savedAt)}-${snapshot.mode}.txt`;
-
-      downloadTextFile(filename, buildTranslationDownloadText({ ...snapshot, summary }));
+      const endedAt = new Date();
+      const filename = await downloadCaptionSummary(latestCaptionSnapshotRef.current, {
+        endedAt,
+        startedAt: sessionStartedAtRef.current || endedAt,
+      });
       setDownloadMessage(`${filename} 다운로드를 시작했습니다.`);
     } catch (error) {
       setDownloadMessage(
@@ -445,31 +196,7 @@ export default function LiveCaptionApp() {
     }
   }
 
-  const sessionConfig = useMemo<SttSessionConfig>(
-    () => ({
-      model: "stt-rt-v5",
-      language_hints: [mode === "en-ko" ? "en" : "ko"],
-      language_hints_strict: true,
-      enable_endpoint_detection: true,
-      max_endpoint_delay_ms: 800,
-      endpoint_sensitivity: 0.6,
-      context: {
-        general: [
-          {
-            key: "domain",
-            value: "materials science conference presentation",
-          },
-        ],
-        terms: DEFAULT_TERMS,
-        translation_terms: mode === "en-ko" ? TRANSLATION_TERMS : undefined,
-      },
-      translation:
-        mode === "en-ko"
-          ? { type: "one_way", target_language: "ko" }
-          : { type: "one_way", target_language: "en" },
-    }),
-    [mode],
-  );
+  const sessionConfig = useMemo(() => createSessionConfig(mode), [mode]);
 
   const recording = useRecording({
     config: requestSonioxConnectionConfig,
@@ -481,14 +208,14 @@ export default function LiveCaptionApp() {
     reconnect_base_delay_ms: 1000,
     reset_transcript_on_reconnect: false,
     onError: (error) => {
-      downloadCurrentTranslation({ once: true });
+      void downloadCurrentTranslationWithSummary();
       setManualError(error);
       setStatusOverride("Error");
     },
     onConnected: () => {
       const connectedAt = Date.now();
 
-      downloadedSessionRef.current = false;
+      sessionStartedAtRef.current = new Date(connectedAt);
       setDownloadMessage(null);
       setManualError(null);
       setStatusOverride("Live");
@@ -499,7 +226,6 @@ export default function LiveCaptionApp() {
       setStatusOverride("Reconnecting");
     },
     onFinished: () => {
-      downloadCurrentTranslation({ once: true });
       setStatusOverride("Stopped");
       setSessionExpiresAt(null);
     },
@@ -511,7 +237,7 @@ export default function LiveCaptionApp() {
     }
 
     const id = window.setInterval(() => {
-      recording.finalize({ trailing_silence_ms: 500 });
+      recording.finalize({ trailing_silence_ms: 1000 });
     }, AUTO_FINALIZE_MS);
 
     return () => window.clearInterval(id);
@@ -525,6 +251,21 @@ export default function LiveCaptionApp() {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
 
     return () => window.clearInterval(id);
+  }, [recording.isActive]);
+
+  useEffect(() => {
+    if (!recording.isActive) {
+      return;
+    }
+
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", warnBeforeUnload);
+
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [recording.isActive]);
 
   useEffect(() => {
@@ -571,12 +312,17 @@ export default function LiveCaptionApp() {
   const originalLines = displayCaptionLines(original?.text || "", originalPartial);
   const hasTranslatedText = translatedLines.length > 0;
   const hasOriginalText = originalLines.length > 0;
-  const hasDownloadableTranslation = Boolean(
-    (translation?.text || "").trim() ||
-      translatedPartial.trim() ||
-      (original?.text || "").trim() ||
-      originalPartial.trim(),
+  const captionSnapshot = useMemo<CaptionSnapshot>(
+    () => ({
+      mode,
+      originalPartialText: originalPartial,
+      originalText: original?.text || "",
+      partialText: translatedPartial,
+      text: translation?.text || "",
+    }),
+    [mode, original?.text, originalPartial, translatedPartial, translation?.text],
   );
+  const hasDownloadableTranslation = hasCaptionText(captionSnapshot);
   const translatedScrollKey = translatedLines
     .map((line) => `${line.text}:${line.isPartial}`)
     .join("|");
@@ -585,14 +331,8 @@ export default function LiveCaptionApp() {
     .join("|");
 
   useEffect(() => {
-    latestTranslationRef.current = {
-      mode,
-      originalPartialText: originalPartial,
-      originalText: original?.text || "",
-      partialText: translatedPartial,
-      text: translation?.text || "",
-    };
-  }, [mode, original?.text, originalPartial, translatedPartial, translation?.text]);
+    latestCaptionSnapshotRef.current = captionSnapshot;
+  }, [captionSnapshot]);
 
   useEffect(() => {
     translatedEndRef.current?.scrollIntoView({
@@ -624,9 +364,9 @@ export default function LiveCaptionApp() {
 
   async function handleStop() {
     await recording.stop();
-    downloadCurrentTranslation({ once: true });
     setStatusOverride("Stopped");
     setSessionExpiresAt(null);
+    await downloadCurrentTranslationWithSummary();
   }
 
   async function handleExtend() {
@@ -676,14 +416,6 @@ export default function LiveCaptionApp() {
             <IconButton onClick={recording.clearTranscript}>
               <RotateCcw className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
               <span className="sr-only sm:not-sr-only">Clear</span>
-            </IconButton>
-            <IconButton
-              disabled={!hasDownloadableTranslation}
-              onClick={() => downloadCurrentTranslation({ once: false })}
-              title="현재 번역 내용을 .txt 파일로 다운로드합니다."
-            >
-              <Download className="shrink-0 translate-y-px" size={15} aria-hidden="true" />
-              <span className="sr-only sm:not-sr-only">Download</span>
             </IconButton>
             <IconButton
               disabled={!hasDownloadableTranslation || isSummarizing}

@@ -10,7 +10,7 @@ type TemporaryKeyResponse = {
   max_session_duration_seconds: number;
 };
 
-const MAX_SESSION_DURATION_SECONDS = 30 * 60;
+const MAX_SESSION_DURATION_SECONDS = 60 * 60;
 const ACCESS_COOKIE_NAME = "live_caption_access";
 const ACCESS_COOKIE_VALUE = "granted";
 
